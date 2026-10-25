@@ -2,6 +2,10 @@
   Target: Altium Designer 26; NOT runtime-tested in Altium.
   Add this file to an Altium Script Project, activate a test PcbDoc,
   and run ResizePCBToTwoInchSquare.
+  Requests Board Planning Mode before resizing, then launches Edit Board
+  Shape to refresh the editor. Press Esc to exit that interactive tool.
+  Automatic interactive-tool cancellation is not implemented: the supplied
+  commands do not include an exit command, and EditBoardShape may block.
 
   The existing board outline bounding box's lower-left corner is retained.
   Both dimensions are exactly 2000 mils = 2 inches = 50.8 mm.
@@ -105,7 +109,15 @@ Begin
             '". Activate a saved test .PcbDoc and run again. No outline changed.');
         Exit;
     End;
-    RSZLog('Obtaining board outline');
+    RSZLog('Requesting Board Planning Mode');
+    ResetParameters;
+    Try
+        AddStringParameter('ViewLayoutStyle', 'BoardPlanningMode');
+        RunProcess('PCB:ChangeViewLayoutStyle');
+    Finally
+        ResetParameters;
+    End;
+    RSZLog('Board Planning Mode request returned; obtaining board outline');
     Outline := Board.BoardOutline;
     If Outline = Nil Then
     Begin
@@ -147,6 +159,27 @@ Begin
             PCBServer.PostProcess;
         End;
 
+        { Launch only after PostProcess closes the outline edit transaction.
+          This reproduces the editor refresh reported during local testing.
+          RunProcess may wait for Esc; code after it cannot reliably cancel
+          a blocking interactive command. Do not simulate global keystrokes. }
+        RSZDialog('Resize calls completed. Edit Board Shape will now open. ' +
+            'Press Esc without moving any vertices to exit the tool. ' +
+            'If it remains active after the script returns, press Esc then.');
+        RSZLog('Launching Edit Board Shape; press Esc to exit');
+        ResetParameters;
+        Try
+            RunProcess('PCB:EditBoardShape');
+        Finally
+            ResetParameters;
+        End;
+        RSZLog('Edit Board Shape launch returned; refreshing and checking outline');
+        Outline := Board.BoardOutline;
+        If Outline = Nil Then
+            Raise('Board outline unavailable after Edit Board Shape.');
+        Outline.Invalidate;
+        Outline.Rebuild;
+        Outline.Validate;
         Board.ViewManager_FullUpdate;
         Client.SendMessage('PCB:Zoom', 'Action=Redraw', 255, Client.CurrentView);
         RSZLog('Reading outline bounds');
@@ -156,7 +189,8 @@ Begin
         ActualHeight := Bounds.Top - Bounds.Bottom;
         If (ActualWidth = SideLength) And (ActualHeight = SideLength) Then
             RSZDialog('Board outline dimensions verified: 2.000 x 2.000 inches ' +
-                '(50.8 x 50.8 mm). Lower-left anchor retained. No file was saved.')
+                '(50.8 x 50.8 mm). Lower-left anchor retained. ' +
+                'If Edit Board Shape is still active, press Esc. No file was saved.')
         Else
             RSZDialog('Outline edit completed, but the dimension check did not match. ' +
                 'Width: ' + CoordUnitToString(ActualWidth, eImperial) +
