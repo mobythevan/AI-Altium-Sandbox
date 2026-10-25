@@ -82,6 +82,7 @@ Var
     Bounds : TCoordRect;
     LeftX, BottomY, SideLength : Integer;
     ActualWidth, ActualHeight : Integer;
+    BoardFileName : String;
 Begin
     If PCBServer = Nil Then
     Begin
@@ -94,9 +95,14 @@ Begin
         RSZDialog('Open and activate a test PCB document first.');
         Exit;
     End;
-    If Board.IsLibrary Then
+    { Check the document actually returned by PCBServer, rather than relying
+      on IsLibrary. Never proceed for a library or an unidentified document. }
+    BoardFileName := Board.FileName;
+    RSZLog('PCBServer current document: ' + BoardFileName);
+    If UpperCase(ExtractFileExt(BoardFileName)) <> '.PCBDOC' Then
     Begin
-        RSZDialog('Activate a PcbDoc, not a PCB footprint library.');
+        RSZDialog('PCBServer returned "' + BoardFileName +
+            '". Activate a saved test .PcbDoc and run again. No outline changed.');
         Exit;
     End;
     RSZLog('Obtaining board outline');
